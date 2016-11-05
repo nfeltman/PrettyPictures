@@ -1,0 +1,12 @@
+[package]
+
+name = "mandelbrot"
+version = "0.0.1"
+authors = [ "Nicolas Feltman <nfeltman@gmail.com>" ]
+
+
+[dependencies]
+
+time = "0.1"
+image = "0.10.3"
+num-complex = "0.1.35"
