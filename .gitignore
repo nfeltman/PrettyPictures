@@ -1,0 +1,10 @@
+#project-specific stuff
+/output/
+
+# rust default stuff
+/target/
+Cargo.lock
+**/*.rs.bk
+
+# sublime stuff
+*.sublime-workspace
