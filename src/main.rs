@@ -19,8 +19,8 @@ use num_complex::Complex;
 fn main() {
 
     let max = 200;
-    let width = 3201;
-    let height = 2401;
+    let width = 3200;
+    let height = 2400;
     //let index = |(x,y) : (i32,i32)| (y * width + x) as usize;
     let deindex = |i| (i % width, i / width);
 
@@ -32,10 +32,10 @@ fn main() {
     let center = Complex::new(-0.6,0.6);
     let top_left = center - Complex::new((width/2) as f32,(height/2) as f32)*scale;
 
-    for _ in 1..2 {
+    for _ in 0..1 {
     utils::start_finish_print("Beginning render.", "Done with render.", ||
         // Iterate over the coordiantes and pixels of the image
-        matfill::fill_colors_par(8,(width*height) as usize, &mut buffer, |i| {
+        matfill::fill_colors((width*height) as usize, &mut buffer, |i| {
             let (x,y) = deindex(i);
             let c = Complex::new(x as f32, y as f32) * scale + top_left;
             let z = Complex::new(0.0, 0.0);
