@@ -10,3 +10,5 @@ authors = [ "Nicolas Feltman <nfeltman@gmail.com>" ]
 time = "0.1"
 image = "0.10.3"
 num-complex = "0.1.35"
+rayon = "0.5.0"
+crossbeam = "0.2.10"
