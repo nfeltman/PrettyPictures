@@ -1,38 +1,33 @@
 use rayon;
 
-pub fn fill_colors_seq<F> (len : usize, buffer : &mut Vec<u8>, f : F)
-	where F : Fn(usize) -> (u8,u8,u8)
+pub fn fill_colors_seq<F, T> (len : usize, buffer : &mut [T], f : F)
+	where F : Fn(usize) -> T
 {
 	render_seq(buffer, 0, len, f)
 }
 
-fn render_seq<F> (buffer : &mut [u8], start_index : usize, len : usize, f : F)
-	where F : Fn(usize) -> (u8,u8,u8)
+fn render_seq<F, T> (buffer : &mut [T], start_index : usize, len : usize, f : F)
+	where F : Fn(usize) -> T
 {
 	for i in 0..len {
-
-		let (r,g,b) = f(i+start_index);
-        let i = i*3;
-        buffer[i] = r;
-        buffer[i+1] = g;
-        buffer[i+2] = b;
+		buffer[i] = f(i+start_index);
     }
 }
 
-pub fn fill_colors<F> (len : usize, buffer : &mut Vec<u8>, f : F)
-	where F : Fn(usize) -> (u8,u8,u8) + Sync + Send
+pub fn fill_colors<F, T> (len : usize, buffer : &mut [T], f : F)
+	where F : Fn(usize) -> T + Sync, T : Send
 {
-	render(buffer.as_mut_slice(), 0, len, &f);
+	render(buffer, 0, len, &f);
 }
 
-fn render<F>(slice: &mut [u8], start_index : usize, len : usize, f : &F) 
-	where F : Fn(usize) -> (u8,u8,u8) + Sync
+fn render<F, T>(slice: &mut [T], start_index : usize, len : usize, f : &F) 
+	where F : Fn(usize) -> T + Sync, T : Send
 {
     if len < 1000 {
 		render_seq(slice, start_index, len, f)
     } else {
         let mid_point = len / 2;
-        let (left, right) = slice.split_at_mut(mid_point*3);
+        let (left, right) = slice.split_at_mut(mid_point);
         rayon::join(
         	|| render(left, start_index, mid_point, f), 
         	|| render(right, start_index + mid_point, len - mid_point, f)
