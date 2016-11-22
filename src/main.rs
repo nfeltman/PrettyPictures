@@ -1,11 +1,9 @@
 #![allow(dead_code)]
-#![allow(unused_variables)]
 
 //!An example of generating julia fractals.
 extern crate num_complex;
 extern crate image;
 extern crate rayon;
-extern crate crossbeam;
 extern crate gtk;
 extern crate gdk_pixbuf;
 extern crate gdk_sys;
@@ -13,15 +11,11 @@ extern crate gdk_sys;
 mod utils;
 mod fractal;
 mod matfill;
+mod gui;
 
 use fractal::*;
-// use std::fs::File;
-// use std::path::Path;
 use std::cell::Cell;
 use num_complex::Complex;
-use gtk::prelude::*;
-use gtk::{Window, WindowType, Image, EventBox};
-use gdk_pixbuf::Pixbuf;
 
 fn main() {
 
@@ -39,98 +33,54 @@ fn main() {
     };
 
     
-    let buffer = utils::start_finish_print("Beginning render.", "Done with render.", ||{
-        render(&opt)
-    });
+    let buffer = render(&opt);
 
     let mut buffer2 = Vec::with_capacity(opt.width*opt.height*4);
     // Convert the vector of tuples to a long vector
-    utils::start_finish_print("Copying.", "Done with copy.", || {
     for (r,g,b) in buffer {
         buffer2.push(r);
         buffer2.push(g);
         buffer2.push(b);
         buffer2.push(255);
-    }});
-
-    if gtk::init().is_err() {
-        println!("Failed to initialize GTK.");
-        return;
     }
 
-    let window = Window::new(WindowType::Toplevel);
-    window.set_title("Fractal Viewer");
-    window.set_default_size(w as i32, h as i32);
-    window.set_resizable(false);
-
-    let pixbuf = Pixbuf::new_from_vec(buffer2,0,true,8,w as i32,h as i32,4*w as i32);
-    let im = Image::new_from_pixbuf(Some(&pixbuf));
-    let event_box = EventBox::new();
-
-    event_box.add(&im);
-    window.add(&event_box);
-
-    window.show_all();
-
-    window.connect_delete_event(|_, _| {
-        gtk::main_quit();
-        Inhibit(false)
-    });
-
     let opt_cell = Cell::new(opt);
-    let buf_box = Box::new(pixbuf);
-    let im_box = Box::new(im);
-    let win_box = Box::new(window);
-
-
-    event_box.connect_scroll_event(move |_, event| {
-        let dev = event.get_device().unwrap();
-        let (x,y) = event.get_position();
-        let dir = event.as_ref().direction;
-        println!("Scrolled at position {:?}, direction {:?}", (x,y), dir);
-
+    gui::run_fractal_gui(w as i32, h as i32, buffer2, move |x,y,dir| {
         let mut opt = opt_cell.get();
         
         const ZOOM : f32 = 0.9;
 
         let scroll_loc = Complex::new(x as f32, y as f32) * opt.scale + opt.top_left;
-        match dir {
-            gdk_sys::GdkScrollDirection::Up => {
-                opt.scale *= ZOOM;
-                opt.top_left = (opt.top_left - scroll_loc) * ZOOM + scroll_loc;
-            },
-            gdk_sys::GdkScrollDirection::Down => {
-                opt.scale /= ZOOM;
-                opt.top_left = (opt.top_left - scroll_loc) / ZOOM + scroll_loc;
-            },
-            _ => {}
-        };
-
+        if dir {
+            opt.scale *= ZOOM;
+            opt.top_left = (opt.top_left - scroll_loc) * ZOOM + scroll_loc;
+        }
+        else{
+            opt.scale /= ZOOM;
+            opt.top_left = (opt.top_left - scroll_loc) / ZOOM + scroll_loc;
+        }
 
         opt_cell.set(opt);
 
-//        im_box.clear();
-
-        let buffer = utils::start_finish_print("Beginning render.", "Done with render.", ||{
+        utils::start_finish_print("Beginning render.", "Done with render.", ||{
             render(&opt)
-        });
-
-        // Convert the vector of tuples to a long vector
-        utils::start_finish_print("Copying.", "Done with copy.", || {
-        for (i,(r,g,b)) in buffer.into_iter().enumerate() {
-            buf_box.put_pixel((i%w) as i32, (i/w) as i32,r,g,b,255);
-        }});
-
-        im_box.set_from_pixbuf(Some(&buf_box));
-
-        im_box.queue_draw();
-
-        Inhibit(false)
+        })
     });
 
-    gtk::main();
+
 
     println!("Goodbye!");
+
+
+    // // Save the image as “fractal.png”
+    // let ref mut fout = File::create(&Path::new("../output/fractal.png")).unwrap();
+
+    // // We must indicate the image’s color type and what format to save as
+    // let res = image::png::PNGEncoder::new(fout).encode(&buffer2,opt.width as u32,opt.height as u32, image::ColorType::RGB(8));
+    // match res {
+    //     Ok(()) => println!("Output successfully written."),
+    //     Err(_) => println!("Problem with output."),
+    // }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -159,21 +109,6 @@ fn render(opt : &RenderOptions) -> Vec<(u8,u8,u8)>
         iterate_smooth(z,c0,opt.max_iter).colorize()
     });
     buffer
-}
-
-fn main2() {
-
-
-
-    // // Save the image as “fractal.png”
-    // let ref mut fout = File::create(&Path::new("../output/fractal.png")).unwrap();
-
-    // // We must indicate the image’s color type and what format to save as
-    // let res = image::png::PNGEncoder::new(fout).encode(&buffer2,opt.width as u32,opt.height as u32, image::ColorType::RGB(8));
-    // match res {
-    //     Ok(()) => println!("Output successfully written."),
-    //     Err(_) => println!("Problem with output."),
-    // }
 }
 
 fn tri_colorize (n : f32) -> (u8,u8,u8) {
