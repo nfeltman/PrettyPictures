@@ -1,6 +1,6 @@
-extern crate num_complex;
 
 use num_complex::Complex;
+use num::Float;
 
 /*pub fn iterate(z0 : Complex<f32>, c : Complex<f32>, max : u8) -> Option<u8> {
 	
@@ -23,15 +23,18 @@ pub enum IterResult{
     MaxIter,
 }
 
-pub fn iterate_smooth(z0 : Complex<f32>, c : Complex<f32>, max : u32) -> IterResult {
+pub fn iterate_smooth<F>(z0 : Complex<F>, c : Complex<F>, max : u32) -> IterResult
+    where F : Float
+{
     
     let mut z = z0;
 
-    let bailout = (2<<16) as f32;
+    let bailout = F::from(2<<16).expect("simple conversion failed");
+    let half = F::from(0.5).expect("simple conversion failed");
 
     for t in 0..max {
         if z.norm_sqr() > bailout {
-            let nu = f32::log2( f32::log2( z.norm_sqr() ) / 2.0 );
+            let nu = (z.norm_sqr().log2() * half).log2().to_f32().expect("simple conversion failed");
             return IterResult::Diverge((t as f32) - nu);
         }
         z = z * z + c;

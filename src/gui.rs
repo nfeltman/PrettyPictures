@@ -27,7 +27,7 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<u8>, handler : F)
         Inhibit(false)
     });
 
-    let pixbuf = Pixbuf::new_from_vec(init,0,true,8,w as i32,h as i32,4*w as i32);
+    let pixbuf = Pixbuf::new_from_vec(init,0,false,8,w as i32,h as i32,3*w as i32);
     let im = Image::new_from_pixbuf(Some(&pixbuf));
     let event_box = EventBox::new();
 
@@ -44,8 +44,6 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<u8>, handler : F)
         let (x,y) = event.get_position();
         let dir = event.as_ref().direction;
 
-        println!("Scrolled at position {:?}, direction {:?}", (x,y), dir);
-
         let scroll_dir = match dir {
             gdk_sys::GdkScrollDirection::Up => true,
             gdk_sys::GdkScrollDirection::Down => false,
@@ -56,8 +54,19 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<u8>, handler : F)
 
         // Convert the vector of tuples to a long vector
         utils::start_finish_print("Copying.", "Done with copy.", || {
-        for (i,(r,g,b)) in buffer.into_iter().enumerate() {
-            buf_box.put_pixel(i as i32 % w, i as i32/w,r,g,b,255);
+        unsafe {
+	        //let n_channels = buf_box.get_n_channels();
+            //let rowstride = buf_box.get_rowstride();
+            let pixels = buf_box.get_pixels();
+
+	        for (i,(r,g,b)) in buffer.into_iter().enumerate() {
+	            let pos = i*3;
+
+	            pixels[pos] = r;
+	            pixels[pos + 1] = g;
+	            pixels[pos + 2] = b;
+	        }
+
         }});
 
         im_box.set_from_pixbuf(Some(&buf_box));
