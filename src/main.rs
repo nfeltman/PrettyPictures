@@ -7,6 +7,7 @@ extern crate rayon;
 extern crate gtk;
 extern crate gdk_pixbuf;
 extern crate gdk_sys;
+extern crate time;
 
 mod utils;
 mod fractal;
@@ -81,6 +82,32 @@ fn main() {
     //     Ok(()) => println!("Output successfully written."),
     //     Err(_) => println!("Problem with output."),
     // }
+}
+
+/*
+    I was reading accidentallyquadratic.tumblr.com the other day and got spooked,
+    so I made this scaling test to make sure that rendering is linear in the number of pixels.
+*/
+fn scaling_test() {
+    for i in 1..1200 {
+        let center = Complex::new(-0.6,0.6);
+        let w = i;
+        let h = i;
+        let s = 0.20 / w as f64;
+
+        let opt = RenderOptions {
+            max_iter : 250,
+            width : w,
+            height : h,
+            scale : s,
+            top_left : center - Complex::new((w/2) as f64,(h/2) as f64)*s,
+        };
+
+        let starttime = time::SteadyTime::now();
+        let _ = render(&opt);
+        let duration = time::SteadyTime::now() - starttime;
+        println!("{:8}\t{}", i*i, duration.num_milliseconds());
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
