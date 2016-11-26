@@ -3,14 +3,17 @@ extern crate gtk;
 extern crate gdk_pixbuf;
 extern crate gdk_sys;
 
-use utils;
 use gtk::prelude::*;
+use std::cell::Cell;
 use gtk::{Window, WindowType, Image, EventBox};
 use gdk_pixbuf::Pixbuf;
 
+pub trait FractalGUIHandler {
+	fn handle_scroll(&mut self,f64,f64,bool) -> Vec<(u8,u8,u8)>;
+}
 
-pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<u8>, handler : F)
-	where F : Fn(f64,f64,bool) -> Vec<(u8,u8,u8)> + 'static
+pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<(u8,u8,u8)>, handler : F)
+	where F : FractalGUIHandler + Copy + 'static
 {
 	 if gtk::init().is_err() {
         panic!("Failed to initialize GTK.");
@@ -27,7 +30,15 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<u8>, handler : F)
         Inhibit(false)
     });
 
-    let pixbuf = Pixbuf::new_from_vec(init,0,false,8,w as i32,h as i32,3*w as i32);
+    let mut buffer2 = Vec::with_capacity((w*h*3) as usize);
+    // Convert the vector of tuples to a long vector
+    for (r,g,b) in init {
+        buffer2.push(r);
+        buffer2.push(g);
+        buffer2.push(b);
+    }
+
+    let pixbuf = Pixbuf::new_from_vec(buffer2,0,false,8,w as i32,h as i32,3*w as i32);
     let im = Image::new_from_pixbuf(Some(&pixbuf));
     let event_box = EventBox::new();
 
@@ -40,6 +51,8 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<u8>, handler : F)
     let im_box = Box::new(im);
 
 
+    let handler_cell = Cell::new(handler);
+
     event_box.connect_scroll_event(move |_, event| {
         let (x,y) = event.get_position();
         let dir = event.as_ref().direction;
@@ -50,13 +63,12 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<u8>, handler : F)
             _ => {return Inhibit(false);}
         };
 
-        let buffer = handler(x,y,scroll_dir);
+        let mut h = handler_cell.get();
+        let buffer = h.handle_scroll(x,y,scroll_dir);
+        handler_cell.set(h);
 
         // Convert the vector of tuples to a long vector
-        utils::start_finish_print("Copying.", "Done with copy.", || {
         unsafe {
-	        //let n_channels = buf_box.get_n_channels();
-            //let rowstride = buf_box.get_rowstride();
             let pixels = buf_box.get_pixels();
 
 	        for (i,(r,g,b)) in buffer.into_iter().enumerate() {
@@ -67,7 +79,7 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<u8>, handler : F)
 	            pixels[pos + 2] = b;
 	        }
 
-        }});
+        }
 
         im_box.set_from_pixbuf(Some(&buf_box));
 

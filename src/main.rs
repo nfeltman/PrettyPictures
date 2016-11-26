@@ -15,7 +15,6 @@ mod matfill;
 mod gui;
 
 use fractal::*;
-use std::cell::Cell;
 use num_complex::Complex;
 
 fn main() {
@@ -34,41 +33,30 @@ fn main() {
     };
 
     
-    let buffer = render(&opt);
 
-    let mut buffer2 = Vec::with_capacity(opt.width*opt.height*3);
-    // Convert the vector of tuples to a long vector
-    for (r,g,b) in buffer {
-        buffer2.push(r);
-        buffer2.push(g);
-        buffer2.push(b);
+    impl gui::FractalGUIHandler for RenderOptions {
+        fn handle_scroll(&mut self, x:f64, y:f64, zoom_in : bool) -> Vec<(u8,u8,u8)>
+        {
+            const ZOOM : f64 = 0.9;
+
+            let scroll_loc = Complex::new(x as f64, y as f64) * self.scale + self.top_left;
+            if zoom_in {
+                self.scale *= ZOOM;
+                self.top_left = (self.top_left - scroll_loc) * ZOOM + scroll_loc;
+            }
+            else {
+                self.scale /= ZOOM;
+                self.top_left = (self.top_left - scroll_loc) / ZOOM + scroll_loc;
+            }
+
+            utils::start_finish_print("Beginning render.", "Done with render.", ||{
+                render(&self)
+            })
+        }
     }
 
-    let opt_cell = Cell::new(opt);
-
-    gui::run_fractal_gui(w as i32, h as i32, buffer2, move |x,y,dir| {
-        let mut opt = opt_cell.get();
-        
-        const ZOOM : f64 = 0.9;
-
-        let scroll_loc = Complex::new(x as f64, y as f64) * opt.scale + opt.top_left;
-        if dir {
-            opt.scale *= ZOOM;
-            opt.top_left = (opt.top_left - scroll_loc) * ZOOM + scroll_loc;
-        }
-        else {
-            opt.scale /= ZOOM;
-            opt.top_left = (opt.top_left - scroll_loc) / ZOOM + scroll_loc;
-        }
-
-        opt_cell.set(opt);
-
-        utils::start_finish_print("Beginning render.", "Done with render.", ||{
-            render(&opt)
-        })
-    });
-
-
+    let buffer = render(&opt);
+    gui::run_fractal_gui(w as i32, h as i32, buffer, opt);
 
     println!("Goodbye!");
 
