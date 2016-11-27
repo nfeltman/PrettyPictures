@@ -17,6 +17,16 @@ mod gui;
 use fractal::*;
 use num_complex::Complex;
 
+
+#[derive(Debug, Copy, Clone)]
+struct RenderOptions {
+    width : usize,
+    height : usize,
+    max_iter : u32,
+    scale : f64,
+    top_left : Complex<f64>,
+}
+
 fn main() {
 
     let center = Complex::new(-0.6,0.6);
@@ -29,13 +39,17 @@ fn main() {
         width : w,
         height : h,
         scale : s,
-        top_left : center - Complex::new((w/2) as f64,(h/2) as f64)*s,
+        top_left : center - Complex::new((w/2) as f64,(h/2) as f64)*s
     };
 
-    
-
     impl gui::FractalGUIHandler for RenderOptions {
-        fn handle_scroll(&mut self, x:f64, y:f64, zoom_in : bool) -> Vec<(u8,u8,u8)>
+        fn handle_init(&mut self, disp : &gui::DisplayHandle)
+        {
+            let buffer = render(&self);
+            disp.display(&buffer);
+        }
+
+        fn handle_scroll(&mut self, disp : &gui::DisplayHandle, x:f64, y:f64, zoom_in : bool)
         {
             const ZOOM : f64 = 0.9;
 
@@ -49,14 +63,21 @@ fn main() {
                 self.top_left = (self.top_left - scroll_loc) / ZOOM + scroll_loc;
             }
 
-            utils::start_finish_print("Beginning render.", "Done with render.", ||{
+            let buffer = utils::start_finish_print("Beginning render.", "Done with render.", ||{
                 render(&self)
-            })
+            });
+
+
+            disp.display(&buffer);
+        }
+
+        fn handle_idle(&mut self, _ : &gui::DisplayHandle)
+        {
+
         }
     }
 
-    let buffer = render(&opt);
-    gui::run_fractal_gui(w as i32, h as i32, buffer, opt);
+    gui::run_fractal_gui(w as i32, h as i32, opt);
 
     println!("Goodbye!");
 
@@ -88,7 +109,7 @@ fn scaling_test() {
             width : w,
             height : h,
             scale : s,
-            top_left : center - Complex::new((w/2) as f64,(h/2) as f64)*s,
+            top_left : center - Complex::new((w/2) as f64,(h/2) as f64)*s
         };
 
         let starttime = time::SteadyTime::now();
@@ -96,15 +117,6 @@ fn scaling_test() {
         let duration = time::SteadyTime::now() - starttime;
         println!("{:8}\t{}", i*i, duration.num_milliseconds());
     }
-}
-
-#[derive(Debug, Copy, Clone)]
-struct RenderOptions {
-    width : usize,
-    height : usize,
-    max_iter : u32,
-    scale : f64,
-    top_left : Complex<f64>,
 }
 
 fn render(opt : &RenderOptions) -> Vec<(u8,u8,u8)>

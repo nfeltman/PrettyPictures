@@ -5,17 +5,45 @@ extern crate gdk_sys;
 
 use gtk::prelude::*;
 use std::cell::Cell;
+use std::rc::Rc;
 use gtk::{Window, WindowType, Image, EventBox};
 use gdk_pixbuf::Pixbuf;
 
-pub trait FractalGUIHandler {
-	fn handle_scroll(&mut self,f64,f64,bool) -> Vec<(u8,u8,u8)>;
+pub struct DisplayHandle {
+	pixbuf : Pixbuf,
+	im : Image
 }
 
-pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<(u8,u8,u8)>, handler : F)
+pub trait FractalGUIHandler {
+	fn handle_init(&mut self, &DisplayHandle);
+	fn handle_scroll(&mut self, &DisplayHandle, f64,f64,bool);
+	fn handle_idle(&mut self, &DisplayHandle);
+}
+
+impl DisplayHandle {
+	pub fn display(self : &DisplayHandle, v : &Vec<(u8,u8,u8)>)
+	{
+		unsafe {
+            let pixels = self.pixbuf.get_pixels();
+
+	        for (i,&(r,g,b)) in v.into_iter().enumerate() {
+	            let pos = i*3;
+
+	            pixels[pos] = r;
+	            pixels[pos + 1] = g;
+	            pixels[pos + 2] = b;
+	        }
+        }
+
+        self.im.set_from_pixbuf(Some(&self.pixbuf));
+        self.im.queue_draw();
+    }
+}
+
+pub fn run_fractal_gui<F> (w : i32, h : i32, mut handler : F)
 	where F : FractalGUIHandler + Copy + 'static
 {
-	 if gtk::init().is_err() {
+	if gtk::init().is_err() {
         panic!("Failed to initialize GTK.");
     }
 
@@ -30,30 +58,31 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<(u8,u8,u8)>, handler : F
         Inhibit(false)
     });
 
-    let mut buffer2 = Vec::with_capacity((w*h*3) as usize);
-    // Convert the vector of tuples to a long vector
-    for (r,g,b) in init {
-        buffer2.push(r);
-        buffer2.push(g);
-        buffer2.push(b);
-    }
+    let buffer2 = vec![0u8;(w*h*3) as usize];
 
     let pixbuf = Pixbuf::new_from_vec(buffer2,0,false,8,w as i32,h as i32,3*w as i32);
     let im = Image::new_from_pixbuf(Some(&pixbuf));
-    let event_box = EventBox::new();
+    let event_widget = EventBox::new();
 
-    event_box.add(&im);
-    window.add(&event_box);
+    event_widget.add(&im);
+    window.add(&event_widget);
 
     window.show_all();
 
-    let buf_box = Box::new(pixbuf);
-    let im_box = Box::new(im);
+    let disp = DisplayHandle {
+    	pixbuf : pixbuf,
+    	im : im
+    };
+    
+    handler.handle_init(&disp);
 
+    let disp_box = Rc::new(disp);
+    let disp_box2 = disp_box.clone();
 
-    let handler_cell = Cell::new(handler);
+    let handler_cell = Rc::new(Cell::new(handler));
+    let handler_cell2 = handler_cell.clone();
 
-    event_box.connect_scroll_event(move |_, event| {
+    event_widget.connect_scroll_event(move |_, event| {
         let (x,y) = event.get_position();
         let dir = event.as_ref().direction;
 
@@ -64,28 +93,17 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, init : Vec<(u8,u8,u8)>, handler : F
         };
 
         let mut h = handler_cell.get();
-        let buffer = h.handle_scroll(x,y,scroll_dir);
+        h.handle_scroll(&disp_box,x,y,scroll_dir);
         handler_cell.set(h);
 
-        // Convert the vector of tuples to a long vector
-        unsafe {
-            let pixels = buf_box.get_pixels();
-
-	        for (i,(r,g,b)) in buffer.into_iter().enumerate() {
-	            let pos = i*3;
-
-	            pixels[pos] = r;
-	            pixels[pos + 1] = g;
-	            pixels[pos + 2] = b;
-	        }
-
-        }
-
-        im_box.set_from_pixbuf(Some(&buf_box));
-
-        im_box.queue_draw();
-
         Inhibit(false)
+    });
+
+    gtk::idle_add(move || {
+        let mut h = handler_cell2.get();
+        h.handle_idle(&disp_box2);
+        handler_cell2.set(h);
+    	Continue(true)
     });
 
     gtk::main();
