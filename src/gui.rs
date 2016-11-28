@@ -4,7 +4,7 @@ extern crate gdk_pixbuf;
 extern crate gdk_sys;
 
 use gtk::prelude::*;
-use std::cell::Cell;
+use std::cell::*;
 use std::rc::Rc;
 use gtk::{Window, WindowType, Image, EventBox};
 use gdk_pixbuf::Pixbuf;
@@ -41,7 +41,7 @@ impl DisplayHandle {
 }
 
 pub fn run_fractal_gui<F> (w : i32, h : i32, mut handler : F)
-	where F : FractalGUIHandler + Copy + 'static
+	where F : FractalGUIHandler + 'static
 {
 	if gtk::init().is_err() {
         panic!("Failed to initialize GTK.");
@@ -79,7 +79,7 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, mut handler : F)
     let disp_box = Rc::new(disp);
     let disp_box2 = disp_box.clone();
 
-    let handler_cell = Rc::new(Cell::new(handler));
+    let handler_cell = Rc::new(RefCell::new(handler));
     let handler_cell2 = handler_cell.clone();
 
     event_widget.connect_scroll_event(move |_, event| {
@@ -92,17 +92,16 @@ pub fn run_fractal_gui<F> (w : i32, h : i32, mut handler : F)
             _ => {return Inhibit(false);}
         };
 
-        let mut h = handler_cell.get();
-        h.handle_scroll(&disp_box,x,y,scroll_dir);
-        handler_cell.set(h);
+    	let mut h = handler_cell.borrow_mut();
+    	h.handle_scroll(&disp_box,x,y,scroll_dir);
 
         Inhibit(false)
     });
 
     gtk::idle_add(move || {
-        let mut h = handler_cell2.get();
+    	let mut h = handler_cell2.borrow_mut();
         h.handle_idle(&disp_box2);
-        handler_cell2.set(h);
+
     	Continue(true)
     });
 
