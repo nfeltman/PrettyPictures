@@ -3,16 +3,16 @@ extern crate pbr;
 
 use self::pbr::ProgressBar;
 
-pub fn start_finish_print<T, F> (start_message : &str, end_message : &str, f : F) -> T
+pub fn start_finish_print<T, F> (name : &str, f : F) -> T
 	where F : FnOnce() -> T
 {
-    println!("{}", start_message);
+    println!("Beginning {}.", name);
     let starttime = time::SteadyTime::now();
 
     let result = f();
 
     let duration = time::SteadyTime::now() - starttime;
-    println!("{}\nElapsed time: {} ms.", end_message, duration.num_milliseconds());
+    println!("Finished {}.\nElapsed time: {} ms.", name, duration.num_milliseconds());
 
     result
 }
@@ -25,7 +25,7 @@ pub fn timing_stats<T, F> (num_trials : u32, name : &str, f : F) -> T
 	let mut result = None;
 
     println!("Beginning {}, {} iterations.", name, num_trials);
-    
+
 	let mut pb = ProgressBar::new(num_trials as u64);
 
 	for _ in 1..num_trials

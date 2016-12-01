@@ -3,11 +3,11 @@ extern crate gtk;
 extern crate gdk_pixbuf;
 extern crate gdk_sys;
 
-use gtk::prelude::*;
+use self::gtk::prelude::*;
 use std::cell::*;
 use std::rc::Rc;
-use gtk::{Window, WindowType, Image, EventBox};
-use gdk_pixbuf::Pixbuf;
+use self::gtk::{Window, WindowType, Image, EventBox};
+use self::gdk_pixbuf::Pixbuf;
 
 pub struct DisplayHandle {
 	pixbuf : Pixbuf,

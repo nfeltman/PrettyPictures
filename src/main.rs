@@ -3,20 +3,23 @@
 //!An example of generating julia fractals.
 extern crate num_complex;
 extern crate num;
-extern crate rayon;
-extern crate gtk;
-extern crate gdk_pixbuf;
-extern crate gdk_sys;
 extern crate time;
+extern crate image;
+extern crate rayon;
+extern crate threadpool;
 
 mod utils;
 mod fractal;
 mod matfill;
 mod gui;
 
+use threadpool::ThreadPool;
 use fractal::*;
 use num_complex::Complex;
-
+use std::fs::File;
+use std::path::Path;
+use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicBool,Ordering};
 
 #[derive(Debug, Copy, Clone)]
 struct RenderOptions {
@@ -27,70 +30,103 @@ struct RenderOptions {
     top_left : Complex<f64>,
 }
 
-fn main() {
+type RenderReceiver = mpsc::Receiver<ColorBuffer>;
 
-    let center = Complex::new(-0.6,0.6);
+struct RuntimeData {
+    pool : ThreadPool,
+    options : RenderOptions,
+    current_job : Option<(RenderReceiver,Arc<AtomicBool>)>
+}
+
+
+fn main() {
+    run_interactive()
+}
+
+fn run_interactive() {
+
+    impl gui::FractalGUIHandler for RuntimeData {
+        fn handle_init(&mut self, disp : &gui::DisplayHandle)
+        {
+            let buffer = render(&self.options, &AtomicBool::new(false));
+            disp.display(&buffer);
+        }
+
+        fn handle_scroll(&mut self, _ : &gui::DisplayHandle, x:f64, y:f64, zoom_in : bool)
+        {
+            const ZOOM : f64 = 0.9;
+
+            {   // this scope limits the borrow of opt
+                let opt = &mut self.options;
+                let scroll_loc = Complex::new(x as f64, y as f64) * opt.scale + opt.top_left;
+                if zoom_in {
+                    opt.scale *= ZOOM;
+                    opt.top_left = (opt.top_left - scroll_loc) * ZOOM + scroll_loc;
+                }
+                else {
+                    opt.scale /= ZOOM;
+                    opt.top_left = (opt.top_left - scroll_loc) / ZOOM + scroll_loc;
+                }
+            }
+
+            // if there's a currently-running rendering job, kill it
+            if let Some ((_, ref kill_switch)) = self.current_job {
+                kill_switch.store(true,Ordering::Relaxed);
+            }
+
+
+            let (sender, receiver) = mpsc::channel();
+            let kill_flag = Arc::new(AtomicBool::new(false));
+
+            self.current_job = Some((receiver, kill_flag.clone()));
+
+            let opt2 = self.options.clone();
+            self.pool.execute(move ||{
+                utils::start_finish_print("render", || {
+                    let _ = sender.send(render(&opt2, &kill_flag));
+                });
+            });
+        }
+
+        fn handle_idle(&mut self, disp : &gui::DisplayHandle)
+        {
+            
+            let replace = 
+                match &self.current_job {
+                    &Some ((ref r, _)) =>
+                    {
+                        match r.try_recv() {
+                            Ok(buffer) => {disp.display(&buffer); println!("=============="); true},
+                            Err(mpsc::TryRecvError::Empty) => false,
+                            Err(mpsc::TryRecvError::Disconnected) => panic!("subthread died")
+                        }
+                    },
+                    &None => false
+                };
+
+            if replace {self.current_job = None}
+        }
+    }
+
+    // set up some defaults
     let w = 800;
     let h = 600;
-    let s = 0.20 / w as f64;
+    let s = 4.0 / w as f64;
 
     let opt = RenderOptions {
         max_iter : 250,
         width : w,
         height : h,
         scale : s,
-        top_left : center - Complex::new((w/2) as f64,(h/2) as f64)*s
+        top_left : - Complex::new((w/2) as f64,(h/2) as f64)*s
     };
 
-    impl gui::FractalGUIHandler for RenderOptions {
-        fn handle_init(&mut self, disp : &gui::DisplayHandle)
-        {
-            let buffer = render(&self);
-            disp.display(&buffer);
-        }
-
-        fn handle_scroll(&mut self, disp : &gui::DisplayHandle, x:f64, y:f64, zoom_in : bool)
-        {
-            const ZOOM : f64 = 0.9;
-
-            let scroll_loc = Complex::new(x as f64, y as f64) * self.scale + self.top_left;
-            if zoom_in {
-                self.scale *= ZOOM;
-                self.top_left = (self.top_left - scroll_loc) * ZOOM + scroll_loc;
-            }
-            else {
-                self.scale /= ZOOM;
-                self.top_left = (self.top_left - scroll_loc) / ZOOM + scroll_loc;
-            }
-
-            let buffer = utils::start_finish_print("Beginning render.", "Done with render.", ||{
-                render(&self)
-            });
-
-
-            disp.display(&buffer);
-        }
-
-        fn handle_idle(&mut self, _ : &gui::DisplayHandle)
-        {
-
-        }
-    }
-
-    gui::run_fractal_gui(w as i32, h as i32, opt);
+    gui::run_fractal_gui(w as i32, h as i32, 
+        RuntimeData{pool: ThreadPool::new(8),
+            options:opt, 
+            current_job:None});
 
     println!("Goodbye!");
-
-
-    // // Save the image as “fractal.png”
-    // let ref mut fout = File::create(&Path::new("../output/fractal.png")).unwrap();
-
-    // // We must indicate the image’s color type and what format to save as
-    // let res = image::png::PNGEncoder::new(fout).encode(&buffer2,opt.width as u32,opt.height as u32, image::ColorType::RGB(8));
-    // match res {
-    //     Ok(()) => println!("Output successfully written."),
-    //     Err(_) => println!("Problem with output."),
-    // }
 }
 
 /*
@@ -98,7 +134,12 @@ fn main() {
     so I made this scaling test to make sure that rendering is linear in the number of pixels.
 */
 fn scaling_test() {
-    for i in 1..1200 {
+    
+    let rayon_config = rayon::Configuration::new();
+    //let rayon_config = rayon_config.set_num_threads(8);
+    rayon::initialize(rayon_config).expect("failed configuring rayon");
+
+    for i in 1..1201 {
         let center = Complex::new(-0.6,0.6);
         let w = i;
         let h = i;
@@ -113,13 +154,67 @@ fn scaling_test() {
         };
 
         let starttime = time::SteadyTime::now();
-        let _ = render(&opt);
+        let _ = render(&opt, &AtomicBool::new(false));
         let duration = time::SteadyTime::now() - starttime;
         println!("{:8}\t{}", i*i, duration.num_milliseconds());
     }
 }
 
-fn render(opt : &RenderOptions) -> Vec<(u8,u8,u8)>
+fn big_test() {
+    
+    let rayon_config = rayon::Configuration::new();
+    rayon::initialize(rayon_config).expect("failed configuring rayon");
+
+    let center = Complex::new(-0.6,0.6);
+    let w = 1800;
+    let h = 1200;
+    let s = 0.20 / w as f64;
+
+    let opt = RenderOptions {
+        max_iter : 250,
+        width : w,
+        height : h,
+        scale : s,
+        top_left : center - Complex::new((w/2) as f64,(h/2) as f64)*s
+    };
+
+    let cancel = AtomicBool::new(false);
+
+    // let cancel_clone = cancel.clone();
+    // let thread = std::thread::spawn(move|| {
+    //     std::thread::sleep(std::time::Duration::from_millis(200));
+    //     cancel_clone.store(true, Ordering::SeqCst);
+    // });
+
+    let buffer = utils::timing_stats(1000,"render", ||{
+        render(&opt, &cancel)
+    });
+
+    // if let Err(panic) = thread.join() {
+    //     println!("Thread had an error: {:?}", panic);
+    // }
+    
+    let mut buffer2 = Vec::with_capacity((w*h*3) as usize);
+    for (r,g,b) in buffer {
+        buffer2.push(r);
+        buffer2.push(g);
+        buffer2.push(b);
+    }
+
+    // Save the image as “fractal.png”
+    let ref mut fout = File::create(&Path::new("../output/fractal.png")).unwrap();
+
+    // We must indicate the image’s color type and what format to save as
+    let res = image::png::PNGEncoder::new(fout).encode(&buffer2,w as u32,h as u32, image::ColorType::RGB(8));
+    match res {
+        Ok(()) => println!("Output successfully written."),
+        Err(_) => println!("Problem with output."),
+    }
+}
+
+type ColorBuffer = Vec<(u8,u8,u8)>;
+
+fn render(opt : &RenderOptions, cancel : &AtomicBool) -> ColorBuffer
 {
     let deindex = |i| (i % opt.width, i / opt.width);
 
@@ -128,13 +223,14 @@ fn render(opt : &RenderOptions) -> Vec<(u8,u8,u8)>
     
     // Create a new buffer
     let mut buffer = vec![(0,0,0); (opt.width*opt.height) as usize];
-    matfill::fill_colors((opt.width*opt.height) as usize, &mut buffer, |i| {
+
+    matfill::fill_colors_cancelable((opt.width*opt.height) as usize, &mut buffer, |i| {
         let (x,y) = deindex(i);
         let (x,y) = (x as f64, y as f64);
         let c0 = Complex::new(x, y) * opt.scale + opt.top_left;
-        // let c1 = Complex::new(x, y+0.5) * scale + top_left;
-        // let c2 = Complex::new(x+0.5, y) * scale + top_left;
-        // let c3 = Complex::new(x+0.5, y+0.5) * scale + top_left;
+        // let c1 = Complex::new(x, y+0.5) * opt.scale + opt.top_left;
+        // let c2 = Complex::new(x+0.5, y) * opt.scale + opt.top_left;
+        // let c3 = Complex::new(x+0.5, y+0.5) * opt.scale + opt.top_left;
         let z = Complex::new(0.0, 0.0);
         
         if low_accuracy
@@ -142,13 +238,13 @@ fn render(opt : &RenderOptions) -> Vec<(u8,u8,u8)>
             // f32 accuracy
             let c0 = Complex::new(c0.re as f32, c0.im as f32);
             let z = Complex::new(z.re as f32, z.im as f32);
-            iterate_smooth(z,c0,opt.max_iter).colorize()
+            iterate_smooth::<f32>(z,c0,opt.max_iter).colorize()
         }
         else {
             // f64 accuracy
-            iterate_smooth(z,c0,opt.max_iter).colorize()
+            iterate_smooth::<f64>(z,c0,opt.max_iter).colorize()
         }
-    });
+    }, &cancel);
     buffer
 }
 
