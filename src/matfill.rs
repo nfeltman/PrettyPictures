@@ -4,18 +4,10 @@ use rayon;
 pub fn fill_colors_seq<F, T>(buffer: &mut [T], f: F)
     where F: Fn(usize) -> T
 {
-    fill_helper_seq(buffer, 0, f)
+    fill_helper_seq(buffer, 0, f, &|| false)
 }
 
-fn fill_helper_seq<F, T>(buffer: &mut [T], start_index: usize, f: F)
-    where F: Fn(usize) -> T
-{
-    for i in 0..buffer.len() {
-        buffer[i] = f(i + start_index);
-    }
-}
-
-fn fill_helper_seq_cancelable<F, T, C>(buffer: &mut [T],
+fn fill_helper_seq<F, T, C>(buffer: &mut [T],
                                     start_index: usize,
                                     f: F,
                                     cancel: &C)
@@ -51,7 +43,7 @@ fn fill_helper<F, T, C>(slice: &mut [T],
     }
 
     if slice.len() < 1000 {
-        fill_helper_seq_cancelable(slice, start_index, f, cancel)
+        fill_helper_seq(slice, start_index, f, cancel)
     } else {
         let mid_point = slice.len() / 2;
         let (left, right) = slice.split_at_mut(mid_point);

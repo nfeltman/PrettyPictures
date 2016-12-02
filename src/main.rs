@@ -13,6 +13,7 @@ mod utils;
 mod fractal;
 mod matfill;
 mod gui;
+mod sampler;
 
 use threadpool::ThreadPool;
 use fractal::*;
@@ -221,7 +222,6 @@ fn big_test() {
 type ColorBuffer = Vec<(u8, u8, u8)>;
 
 fn render(opt: &RenderOptions, cancel: &AtomicBool) -> ColorBuffer {
-    let deindex = |i| (i % opt.width, i / opt.width);
 
     // when we're not especially zoomed in, we can use lower accuracy
     let low_accuracy = opt.scale > 0.0000001;
@@ -229,10 +229,8 @@ fn render(opt: &RenderOptions, cancel: &AtomicBool) -> ColorBuffer {
     // Create a new buffer
     let mut buffer = vec![(0,0,0); (opt.width*opt.height) as usize];
 
-    matfill::fill_colors(&mut buffer, || cancel.load(Ordering::Relaxed),
-    |i| {
-        let (x, y) = deindex(i);
-        let (x, y) = (x as f64, y as f64);
+    sampler::sample(opt.width, opt.height, &mut buffer, || cancel.load(Ordering::Relaxed),
+    |x,y| {
         let c = Complex::new(x, y) * opt.scale + opt.top_left;
 
         if low_accuracy {
