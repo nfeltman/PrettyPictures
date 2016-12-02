@@ -1,73 +1,62 @@
 
 use rayon;
 
-use std::sync::atomic::{AtomicBool,Ordering};
-
-pub fn fill_colors_seq<F, T> (len : usize, buffer : &mut [T], f : F)
-	where F : Fn(usize) -> T
+pub fn fill_colors_seq<F, T>(buffer: &mut [T], f: F)
+    where F: Fn(usize) -> T
 {
-	fill_helper_seq(buffer, 0, len, f)
+    fill_helper_seq(buffer, 0, f)
 }
 
-fn fill_helper_seq<F, T> (buffer : &mut [T], start_index : usize, len : usize, f : F)
-	where F : Fn(usize) -> T
+fn fill_helper_seq<F, T>(buffer: &mut [T], start_index: usize, f: F)
+    where F: Fn(usize) -> T
 {
-	for i in 0..len {
-		buffer[i] = f(i+start_index);
+    for i in 0..buffer.len() {
+        buffer[i] = f(i + start_index);
     }
 }
 
-pub fn fill_colors<F, T> (len : usize, buffer : &mut [T], f : F)
-	where F : Fn(usize) -> T + Sync, T : Send
+fn fill_helper_seq_cancelable<F, T, C>(buffer: &mut [T],
+                                    start_index: usize,
+                                    f: F,
+                                    cancel: &C)
+    where F: Fn(usize) -> T, 
+          C: Fn() -> bool
 {
-	fill_helper(buffer, 0, len, &f);
+    for i in 0..buffer.len() {
+        if cancel() {
+            return ();
+        }
+        buffer[i] = f(i + start_index);
+    }
 }
 
-fn fill_helper<F, T>(slice: &mut [T], start_index : usize, len : usize, f : &F) 
-	where F : Fn(usize) -> T + Sync, T : Send
+pub fn fill_colors<F, T, C>(buffer: &mut [T], cancel: C, f: F)
+    where F: Fn(usize) -> T + Sync,
+          T: Send,
+          C: Fn() -> bool + Sync
 {
-    if len < 150 {
-		fill_helper_seq(slice, start_index, len, f)
+    fill_helper(buffer, 0, &f, &cancel);
+}
+
+fn fill_helper<F, T, C>(slice: &mut [T],
+                    start_index: usize,
+                    f: &F,
+                    cancel: &C)
+    where F: Fn(usize) -> T + Sync,
+          T: Send, 
+          C: Fn() -> bool + Sync
+{
+    if cancel() {
+        return;
+    }
+
+    if slice.len() < 1000 {
+        fill_helper_seq_cancelable(slice, start_index, f, cancel)
     } else {
-        let mid_point = len / 2;
+        let mid_point = slice.len() / 2;
         let (left, right) = slice.split_at_mut(mid_point);
-        rayon::join(
-        	|| fill_helper(left, start_index, mid_point, f), 
-        	|| fill_helper(right, start_index + mid_point, len - mid_point, f)
+        rayon::join(|| fill_helper(left, start_index, f, cancel),
+                    || fill_helper(right, start_index + mid_point, f, cancel)
         );
     }
 }
-
-
-fn fill_helper_seq_cancelable<F, T> (buffer : &mut [T], start_index : usize, len : usize, f : F, cancel : &AtomicBool)
-    where F : Fn(usize) -> T
-{
-    for i in 0..len {
-        if cancel.load(Ordering::Relaxed) {return ()}
-        buffer[i] = f(i+start_index);
-    }
-}
-
-pub fn fill_colors_cancelable<F, T> (len : usize, buffer : &mut [T], f : F, cancel : &AtomicBool)
-    where F : Fn(usize) -> T + Sync, T : Send
-{
-    fill_helper_cancelable(buffer, 0, len, &f, cancel);
-}
-
-fn fill_helper_cancelable<F, T>(slice: &mut [T], start_index : usize, len : usize, f : &F, cancel : &AtomicBool) 
-    where F : Fn(usize) -> T + Sync, T : Send
-{
-    if cancel.load(Ordering::Relaxed) {return;}
-
-    if len < 1000 {
-        fill_helper_seq_cancelable(slice, start_index, len, f, cancel)
-    } else {
-        let mid_point = len / 2;
-        let (left, right) = slice.split_at_mut(mid_point);
-        rayon::join(
-            || fill_helper_cancelable(left, start_index, mid_point, f, cancel), 
-            || fill_helper_cancelable(right, start_index + mid_point, len - mid_point, f, cancel)
-        );
-    }
-}
-
