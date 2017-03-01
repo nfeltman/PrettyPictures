@@ -25,12 +25,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use num_traits::Zero;
 
 #[derive(Debug, Copy, Clone)]
-struct RenderOptions {
+struct RenderWindow {
     width: usize,
     height: usize,
-    max_iter: u32,
     scale: f64,
     top_left: Complex<f64>,
+}
+
+#[derive(Debug, Copy, Clone)]
+struct RenderOptions {
+    window : RenderWindow,
+    max_iter: u32,
 }
 
 type RenderReceiver = mpsc::Receiver<ColorBuffer>;
@@ -59,7 +64,7 @@ fn run_interactive() {
 
             {
                 // this scope limits the borrow of opt
-                let opt = &mut self.options;
+                let opt = &mut self.options.window;
                 let scroll_loc = Complex::new(x as f64, y as f64) * opt.scale + opt.top_left;
                 if zoom_in {
                     opt.scale *= ZOOM;
@@ -119,12 +124,15 @@ fn run_interactive() {
     let h = 600;
     let s = 4.0 / w as f64;
 
-    let opt = RenderOptions {
-        max_iter: 250,
+    let win = RenderWindow {
         width: w,
         height: h,
         scale: s,
         top_left: -Complex::new((w / 2) as f64, (h / 2) as f64) * s,
+    };
+    let opt = RenderOptions {
+        max_iter: 250,
+        window: win
     };
 
     gui::run_fractal_gui(w as i32,
@@ -152,13 +160,16 @@ fn scaling_test() {
         let w = i;
         let h = i;
         let s = 0.20 / w as f64;
-
-        let opt = RenderOptions {
-            max_iter: 250,
+        
+        let win = RenderWindow {
             width: w,
             height: h,
             scale: s,
             top_left: center - Complex::new((w / 2) as f64, (h / 2) as f64) * s,
+        };
+        let opt = RenderOptions {
+            max_iter: 250,
+            window: win
         };
 
         let starttime = time::SteadyTime::now();
@@ -177,13 +188,15 @@ fn big_test() {
     let w = 1800;
     let h = 1200;
     let s = 0.20 / w as f64;
-
-    let opt = RenderOptions {
-        max_iter: 250,
+    let win = RenderWindow {
         width: w,
         height: h,
         scale: s,
         top_left: center - Complex::new((w / 2) as f64, (h / 2) as f64) * s,
+    };
+    let opt = RenderOptions {
+        max_iter: 250,
+        window: win,
     };
 
     let cancel = AtomicBool::new(false);
@@ -223,23 +236,28 @@ type ColorBuffer = Vec<(u8, u8, u8)>;
 
 fn render(opt: &RenderOptions, cancel: &AtomicBool) -> ColorBuffer {
 
+    let win = &opt.window;
     // when we're not especially zoomed in, we can use lower accuracy
-    let low_accuracy = opt.scale > 0.0000001;
+    let low_accuracy = win.scale > 0.0000001;
 
     // Create a new buffer
-    let mut buffer = vec![(0,0,0); (opt.width*opt.height) as usize];
+    let mut buffer = vec![(0,0,0); (win.width*win.height) as usize];
 
-    sampler::sample(opt.width, opt.height, &mut buffer, || cancel.load(Ordering::Relaxed),
-    |x,y| {
-        let c = Complex::new(x, y) * opt.scale + opt.top_left;
-
-        if low_accuracy {
+    if low_accuracy {
+        sampler::sample(win.width, win.height, &mut buffer, || cancel.load(Ordering::Relaxed),
+        |x,y| {
+            let c = Complex::new(x, y) * win.scale + win.top_left;
             let c = Complex::new(c.re as f32, c.im as f32);
             iterate_smooth::<f32>(Complex::zero(), c, opt.max_iter).colorize()
-        } else {
+        });
+    } else {
+        sampler::sample(win.width, win.height, &mut buffer, || cancel.load(Ordering::Relaxed),
+        |x,y| {
+            let c = Complex::new(x, y) * win.scale + win.top_left;
             iterate_smooth::<f64>(Complex::zero(), c, opt.max_iter).colorize()
-        }
-    });
+        });
+    };
+
     buffer
 }
 

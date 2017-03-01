@@ -16,7 +16,6 @@ impl Add for WColor {
 	fn add (self, o : WColor) -> WColor {
 		WColor(self.0 + o.0, self.1 + o.1, self.2 + o.2, self.3 + o.3)
 	}
-    
 }
 
 impl Averageable for (u8,u8,u8) {
